@@ -6,11 +6,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=portrait">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>TerraForge 2D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+<script>
+// ── ONLINE MULTIPLAYER via PeerJS ──
+let peer=null,conn=null,myId=null,isHost=false;
+let onlinePlayers={};
+function initPeer(){peer=new Peer(undefined,{debug:0});peer.on('open',id=>{myId=id;document.getElementById('myIdTxt').textContent='Your ID: '+id;});peer.on('connection',c=>{conn=c;isHost=true;setupConn(c);showToast('👥 Player joined!',3000);});peer.on('error',e=>showToast('❌ Online error: '+e.type,3000));}
+function connectTo(){const id=document.getElementById('peerIdInput').value.trim();if(!id)return;conn=peer.connect(id);setupConn(conn);showToast('🔗 Connecting...',2000);}
+function setupConn(c){c.on('open',()=>{showToast('✅ Connected!',3000);closeOnlinePanel();});c.on('data',data=>{if(!window.GS)return;if(data.type==='pos'){const id=data.id;if(!onlinePlayers[id]){const sc=window.GS;const g=sc.add.graphics().setDepth(11);const nt=sc.add.text(0,0,'👤',{fontSize:'10px'}).setDepth(12);onlinePlayers[id]={gfx:g,nametag:nt};}const op=onlinePlayers[id];op.x=data.x;op.y=data.y;op.hp=data.hp;op.facing=data.facing;drawOnlinePlayer(op);}if(data.type==='block'&&window.GS){window.GS.map[data.tx][data.ty]=data.bt;window.GS.invChunk(data.tx,data.ty);}});c.on('close',()=>{showToast('❌ Disconnected',3000);Object.values(onlinePlayers).forEach(op=>{op.gfx.destroy();op.nametag.destroy();});onlinePlayers={};conn=null;});}
+function sendPos(){if(!conn||!conn.open||!window.GS)return;conn.send({type:'pos',id:myId,x:window.GS.pC.x,y:window.GS.pC.y,hp:window.GS.pHP,facing:window.GS.pFacing});}
+function sendBlock(tx,ty,bt){if(!conn||!conn.open)return;conn.send({type:'block',tx,ty,bt});}
+function drawOnlinePlayer(op){const g=op.gfx;g.clear();const f=op.facing||1,x=op.x||0,y=op.y||0;g.setPosition(x,y);g.fillStyle(0xff8888);g.fillRect(-6,-4,12,12);g.fillStyle(0xffcc88);g.fillRect(-5,-16,10,11);g.fillStyle(0x3a1800);g.fillRect(-5,-16,10,4);g.scaleX=f;if(op.nametag)op.nametag.setPosition(x-12,y-24);}
+function openOnlinePanel(){document.getElementById('onlinePanel').style.display='block';if(!peer)initPeer();}
+function closeOnlinePanel(){document.getElementById('onlinePanel').style.display='none';}
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:none;}
 html,body{width:100%;height:100%;background:#000;overflow:hidden;}
-canvas{display:block;touch-action:none;}
+canvas{display:block;touch-action:none;width:100%!important;height:100%!important;}
 #craftPanel{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#0d1a0d;border:2px solid #3a7a3a;border-radius:10px;padding:16px;z-index:15000;font-family:"Courier New",monospace;min-width:270px;max-width:92vw;max-height:80vh;overflow-y:auto;}
 #craftPanel h3{color:#FFD700;font-size:15px;margin-bottom:10px;text-align:center;}
 .cR{display:flex;align-items:center;justify-content:space-between;background:#1a2a1a;border:1px solid #2a5a2a;border-radius:5px;padding:6px 9px;margin-bottom:6px;}
@@ -39,9 +53,19 @@ canvas{display:block;touch-action:none;}
   <div id="recipeList"></div>
   <button id="cpClose" onclick="closeCraft()">✕ CLOSE</button>
 </div>
+<div id="onlinePanel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#0d1a2a;border:2px solid #3a6aaa;border-radius:10px;padding:18px;z-index:15000;font-family:'Courier New',monospace;min-width:280px;max-width:92vw;">
+  <h3 style="color:#FFD700;text-align:center;margin-bottom:12px;">🌐 Online Multiplayer</h3>
+  <div id="myIdTxt" style="color:#88aaff;font-size:12px;margin-bottom:10px;word-break:break-all;">Loading ID...</div>
+  <div style="color:#aaa;font-size:11px;margin-bottom:6px;">Share your ID with friend, or enter their ID:</div>
+  <input id="peerIdInput" placeholder="Enter friend's ID..." style="width:100%;padding:6px;background:#1a2a3a;border:1px solid #3a6aaa;color:#fff;font-family:'Courier New',monospace;font-size:12px;border-radius:4px;margin-bottom:8px;">
+  <button onclick="connectTo()" style="width:100%;padding:7px;background:#1a3a5a;border:1px solid #3a7aaa;color:#aaccff;font-family:'Courier New',monospace;font-size:13px;border-radius:5px;cursor:pointer;margin-bottom:6px;">🔗 Connect to Friend</button>
+  <div style="color:#668866;font-size:10px;margin-bottom:8px;">Both players see the same world. Host starts the game first!</div>
+  <button onclick="closeOnlinePanel()" style="width:100%;padding:6px;background:#3a1a1a;border:1px solid #aa3a3a;color:#ffaaaa;font-family:'Courier New',monospace;font-size:12px;border-radius:5px;cursor:pointer;">✕ Close</button>
+</div>
 <div id="toast"></div>
 <button id="musicBtn" onclick="toggleMusic()">♪ ON</button>
 <button id="craftBtnUI" onclick="toggleCraft()">⚒ Craft</button>
+<button id="onlineBtnUI" onclick="openOnlinePanel()" style="position:fixed;top:6px;right:140px;z-index:10000;padding:4px 9px;background:rgba(0,0,0,0.65);border:1px solid #3a6aaa;color:#aaccff;font-family:'Courier New',monospace;font-size:11px;border-radius:5px;cursor:pointer;">🌐 Online</button>
 <div id="mobileHUD">
   <div id="joyZone"><div id="joyKnob"></div></div>
   <div class="mBtn" id="btnJump">↑</div>
@@ -205,7 +229,8 @@ this.pGfx=this.add.graphics().setDepth(13);
 this.pFacing=1;this.pVx=0;this.pVy=0;this.pOnGround=false;
 this.pHP=100;this.pMaxHP=100;this.pInv=0;this.pState=‘idle’;
 this.atkCD=0;this.placeCD=0;this.atkFlash=0;this.regenT=0;
-this.fallStartY=null; // null = not tracking yet
+this.fallStartY=null;  // null = disabled until first landing
+this.landedOnce=false; // track if player has landed at least once
 const mx=(WW/2)|0;
 this.pC=this.add.container(mx*TS,(this.surf[mx]-3)*TS).setDepth(11);
 this.pG=this.add.graphics();this.pC.add(this.pG);
@@ -215,7 +240,10 @@ this.addItem(‘pickaxe’,1);this.addItem(‘sword’,1);
 this.addItem(‘dirt’,20);this.addItem(‘wood’,10);this.addItem(‘stone’,8);
 this.addItem(‘torch’,4);this.addItem(‘coal’,3);
 // Day system
-this.dayNum=1;this.dayT=0;this.dayDur=90000;
+this.dayNum=1;this.dayT=0;
+// Day = 4 min, Night = 3 min, Total = 7 min
+this.dayDur=420000;
+this.dayRatio=4/7;
 this.isNight=false;this.waveNum=0;this.waveTimer=0;
 this.waveCooldown=18000;this.waveActive=false;
 this.mobs=[];this.animals=[];this.drops=[];
@@ -239,7 +267,15 @@ tryM();if(this.paused||craftOpen)return;
 this.pwx=p.worldX;this.pwy=p.worldY;
 this.cursorTX=Math.floor(p.worldX/TS);this.cursorTY=Math.floor(p.worldY/TS);
 if(p.button===2||p.rightButtonDown()){this.rmbDown=true;this.doPlace(this.cursorTX,this.cursorTY);}
-else{this.lmbDown=true;this.startLMB(p.worldX,p.worldY);}
+else{
+this.lmbDown=true;
+// On mobile: tap to set cursor position for placing
+if(IS_MOBILE&&this.selItem()?.isBlock){
+// just update cursor, place button does the placing
+} else {
+this.startLMB(p.worldX,p.worldY);
+}
+}
 });
 this.input.on(‘pointermove’,p=>{
 this.pwx=p.worldX;this.pwy=p.worldY;
@@ -288,13 +324,14 @@ showToast(`Used ${item.name}: +${healed} HP! ❤️`);
 updateDayNight(dt){
 this.dayT+=dt;const dp=this.dayT/this.dayDur;
 const wasNight=this.isNight;
-this.isNight=(dp>=0.5&&dp<0.85);
+// Day = 0..0.571 (4min), Night = 0.571..1.0 (3min)
+this.isNight=(dp>=0.571&&dp<1.0);
 if(this.isNight&&!wasNight){
 this.waveNum=0;this.waveTimer=0;
 if(this.dayNum===1)showToast(‘🌙 Night 1 — Safe tonight!’,4000);
 else{showToast(`🌙 Night ${this.dayNum} — WAVES INCOMING!`,3000);this.time.delayedCall(3000,()=>this.spawnWave());}
 }
-if(!this.isNight&&wasNight&&this.dayT>this.dayDur*0.1){
+if(!this.isNight&&wasNight&&this.dayT>this.dayDur*0.05){
 this.dayNum++;this.dayT=0;this.waveActive=false;
 showToast(`☀️ Day ${this.dayNum} — You survived!`,3000);
 if(this.animals.length<8)this.spawnAnimals();
@@ -303,30 +340,36 @@ if(this.isNight&&this.dayNum>=2){
 this.waveTimer+=dt;
 if(this.waveTimer>=this.waveCooldown&&!this.waveActive){this.waveTimer=0;this.spawnWave();}
 }
-this.drawSky(dp);
+// Map to sky gradient 0..1
+const skyDp=dp<0.571?dp/0.571*0.5:0.5+(dp-0.571)/0.429*0.5;
+this.drawSky(skyDp);
 const ov=this.nightOvl;ov.clear();
 let na=0;
-if(dp>.45&&dp<.55)na=((dp-.45)/.1)*.75;
-else if(dp>=.55&&dp<.8)na=.75;
-else if(dp>=.8&&dp<.85)na=((0.85-dp)/.05)*.75;
+if(skyDp>.45&&skyDp<.55)na=((skyDp-.45)/.1)*.75;
+else if(skyDp>=.55&&skyDp<.9)na=.75;
+else if(skyDp>=.9&&skyDp<1)na=((1-skyDp)/.1)*.75;
 if(na>0){ov.fillStyle(0x000028,na);ov.fillRect(0,0,this.scale.width,this.scale.height);}
+const phase=this.isNight?‘🌙’:‘☀️’;
+this.dayText.setText(`${phase} Day ${this.dayNum}`);
+if(this.isNight&&this.dayNum>=2&&this.waveActive){this.waveText.setText(`⚠️ WAVE ${this.waveNum}!`);this.waveText.setAlpha(.5+Math.sin(Date.now()*.005)*.5);}
+else if(this.isNight&&this.dayNum>=2){const t=Math.max(0,Math.ceil((this.waveCooldown-this.waveTimer)/1000));this.waveText.setText(t>0?`Next wave: ${t}s`:’’);this.waveText.setAlpha(1);}
+else this.waveText.setText(’’);
 }
 
 spawnWave(){
 this.waveNum++;this.waveActive=true;
 const count=Math.min(3+this.dayNum*2+this.waveNum*2,20);
-const diff=this.dayNum+this.waveNum;
 showToast(`⚠️ WAVE ${this.waveNum}! (${count} enemies)`,3000);
 for(let i=0;i<count;i++){
 this.time.delayedCall(i*600,()=>{
 const side=Math.random()<.5?-1:1;
 const sx=Math.max(10,Math.min(WW*TS-10,this.pC.x+side*(280+Math.random()*200)))|0;
 const sy=this.surf[Math.floor(sx/TS)]||80;
-let type,r=Math.random();
-if(diff<=2)type=r<.6?‘goblin’:‘slime’;
-else if(diff<=4)type=r<.4?‘goblin’:r<.7?‘zombie’:‘slime’;
-else if(diff<=6)type=r<.3?‘goblin’:r<.5?‘zombie’:r<.75?‘eye’:‘knight’;
-else type=r<.2?‘goblin’:r<.4?‘zombie’:r<.6?‘eye’:r<.8?‘knight’:‘demon’;
+// Only night mobs: zombie, creeper, spider
+const r=Math.random();
+let type;
+if(this.dayNum<=2)type=r<.5?‘zombie’:r<.8?‘creeper’:‘spider’;
+else type=r<.4?‘zombie’:r<.7?‘creeper’:‘spider’;
 this.mobs.push(new Mob(this,sx,(sy-2)*TS,type));
 });
 }
@@ -417,8 +460,7 @@ if(this.pInv>0&&Math.floor(this.pInv/60)%2===0){g.fillStyle(0xff4444,.3);g.fillR
 this.pG.scaleX=f;
 }
 solid(tx,ty){if(tx<0||tx>=WW||ty<0||ty>=WH)return true;const t=this.map[tx][ty];return t!==0&&t!==9&&t!==5&&t!==11;}
-// Player is exactly 1 block tall (h=16) and half a block wide
-collides(x,y,w=10,h=16){return[[x-w/2+1,y-h+1],[x+w/2-2,y-h+1],[x-w/2+1,y-1],[x+w/2-2,y-1]].some(([px,py])=>this.solid(Math.floor(px/TS),Math.floor(py/TS)));}
+collides(x,y,w=10,h=28){return[[x-w/2+1,y-h+1],[x+w/2-2,y-h+1],[x-w/2+1,y],[x+w/2-2,y]].some(([px,py])=>this.solid(Math.floor(px/TS),Math.floor(py/TS)));}
 addItem(type,count){for(let i=0;i<9;i++)if(this.slots[i]?.type===type){this.slots[i].count+=count;return;}for(let i=0;i<9;i++)if(!this.slots[i]){const d=ITEMS[type];if(!d)return;this.slots[i]={…d,type,count};return;}}
 removeItem(type,count){for(let i=0;i<9;i++)if(this.slots[i]?.type===type){this.slots[i].count-=count;if(this.slots[i].count<=0)this.slots[i]=null;return;}}
 selItem(){return this.slots[this.sel]||null;}
@@ -567,27 +609,27 @@ const K=this.keys;
 const ml=(K.L?.isDown||K.A?.isDown)||(joy.dx<-.3);
 const mr=(K.R?.isDown||K.D?.isDown)||(joy.dx>.3);
 if(ml){this.pVx=-3.2;this.pFacing=-1;this.pState=‘run’;}else if(mr){this.pVx=3.2;this.pFacing=1;this.pState=‘run’;}else{this.pVx*=.72;if(Math.abs(this.pVx)<.1)this.pState=‘idle’;}
-if(((K.SP?.isDown||K.W?.isDown)||mBtns.jump)&&this.pOnGround){this.pVy=-7.5;this.pOnGround=false;this.pState=‘jump’;this.fallStartY=this.pC.y;}
+if(((K.SP?.isDown||K.W?.isDown)||mBtns.jump)&&this.pOnGround){this.pVy=-7.5;this.pOnGround=false;this.pState=‘jump’;if(this.landedOnce)this.fallStartY=this.pC.y;}
 // While rising — update fallStartY so we measure from highest point
-if(!this.pOnGround&&this.pVy<0)this.fallStartY=this.pC.y;
+if(!this.pOnGround&&this.pVy<0&&this.landedOnce)this.fallStartY=this.pC.y;
 this.pVy=Math.min(this.pVy+.45,16);
 const nx=this.pC.x+this.pVx;if(!this.collides(nx,this.pC.y))this.pC.x=Phaser.Math.Clamp(nx,8,WW*TS-8);else this.pVx=0;
 const ny=this.pC.y+this.pVy;this.pOnGround=false;
 if(!this.collides(this.pC.x,ny))this.pC.y=ny;
 else{
-// Only check fall damage if we were actually tracking a fall
-if(this.fallStartY!==null&&this.pVy>0){
+// Only check fall damage after player has landed once (not on spawn)
+if(this.landedOnce&&this.fallStartY!==null&&this.pVy>0){
 const fallDist=Math.round((this.pC.y-this.fallStartY)/TS);
 if(fallDist>10){
 const fd=Math.round((fallDist-10)*6);
-if(fd>0){
-this.pHP=Math.max(1,this.pHP-fd);
-this.pInv=400;this.regenT=0;
-showToast(`💥 Fell ${fallDist} blocks! -${fd}HP`);
+if(fd>0){this.pHP=Math.max(1,this.pHP-fd);this.pInv=400;this.regenT=0;showToast(`💥 Fell ${fallDist} blocks! -${fd}HP`);}
 }
 }
+if(this.pVy>0){
+this.pOnGround=true;
+this.landedOnce=true; // mark first landing
+this.fallStartY=this.pC.y;
 }
-if(this.pVy>0){this.pOnGround=true;this.fallStartY=this.pC.y;}
 this.pVy=0;
 while(this.collides(this.pC.x,this.pC.y-1))this.pC.y-=1;
 }
@@ -596,8 +638,11 @@ if(mBtns.mine&&!this.mT){const fx=this.pC.x+this.pFacing*TS*1.5,fy=this.pC.y;con
 if(!mBtns.mine&&!this.lmbDown&&this.mT){this.mT=null;this.mProg=0;}
 if(this.lmbDown&&!this.mT){const tx=Math.floor(this.pwx/TS),ty=Math.floor(this.pwy/TS);const item=this.selItem();if(!(item&&(item.type===‘sword’||item.type===‘ironsword’))&&this.canMine(tx,ty)){this.mT={tx,ty};this.mProg=0;}}
 if(this.rmbDown&&this.placeCD<=0)this.doPlace(this.cursorTX,this.cursorTY);
-if(mBtns.place&&this.placeCD<=0){const tx=Math.floor((this.pC.x+this.pFacing*TS*1.8)/TS),ty=Math.floor(this.pC.y/TS);this.doPlace(tx,ty);}
+// Mobile place — place at last touched world position
+if(mBtns.place&&this.placeCD<=0)this.doPlace(this.cursorTX,this.cursorTY);
 this.drawPlayer();this.updateMining(dt);this.updatePlacePreview();this.updateDrops(dt);this.updateWeapon();this.refreshChunks();this.refreshHB();
+// Sync position online
+if(Date.now()%(100)<20)sendPos();
 this.mobs.forEach(m=>m.update(dt,this.pC.x,this.pC.y));
 this.mobs.forEach(m=>{if(!m.alive||m.dmgCD>0||this.pInv>0)return;const dx=m.cont.x-this.pC.x,dy=m.cont.y-this.pC.y;if(dx*dx+dy*dy<22*22){this.pHP=Math.max(0,this.pHP-m.dmg);m.dmgCD=900;this.pInv=600;this.regenT=0;if(this.pHP<=0)this.die();}});
 for(let i=this.mobs.length-1;i>=0;i–)if(!this.mobs[i].alive&&this.mobs[i].dead){this.mobs[i].cont.destroy();this.mobs.splice(i,1);}
@@ -611,39 +656,223 @@ die(){showToast(`💀 Died on Day ${this.dayNum}!`,4000);this.cameras.main.fadeO
 class Mob{
 constructor(scene,x,y,type){
 this.sc=scene;this.type=type;this.alive=true;this.dead=false;
-this.cont=scene.add.container(x,y).setDepth(11);this.gfx=scene.add.graphics();this.cont.add(this.gfx);this.hpGfx=scene.add.graphics();this.cont.add(this.hpGfx);
-this.vx=0;this.vy=0;this.onG=false;this.facing=1;this.stateT=0;this.state=‘patrol’;this.dmgCD=0;this.invCD=0;
+this.cont=scene.add.container(x,y).setDepth(11);
+this.gfx=scene.add.graphics();this.cont.add(this.gfx);
+this.hpGfx=scene.add.graphics();this.cont.add(this.hpGfx);
+this.timerGfx=scene.add.graphics();this.cont.add(this.timerGfx);
+this.timerTxt=scene.add.text(0,-30,’’,{fontFamily:’“Courier New”,monospace’,fontSize:‘14px’,color:’#ff4400’,stroke:’#000’,strokeThickness:3}).setOrigin(.5);
+this.cont.add(this.timerTxt);
+this.vx=0;this.vy=0;this.onG=false;this.facing=1;
+this.stateT=0;this.state=‘idle’;this.dmgCD=0;this.invCD=0;
+// Creeper specific
+this.fuseTimer=0;this.fuseActive=false;this.exploded=false;
 const d=scene.dayNum||1;
-switch(type){case’goblin’:this.hp=this.maxHp=30+d*10;this.color=0x228822;this.w=8;this.h=20;this.dmg=6+d*2;break;case’slime’:this.hp=this.maxHp=18+d*6;this.color=0x3355cc;this.w=10;this.h=10;this.dmg=4+d;break;case’zombie’:this.hp=this.maxHp=55+d*15;this.color=0x446622;this.w=8;this.h=22;this.dmg=10+d*3;break;case’eye’:this.hp=this.maxHp=40+d*12;this.color=0xcc2222;this.w=12;this.h=12;this.dmg=9+d*2;this.flying=true;break;case’knight’:this.hp=this.maxHp=80+d*20;this.color=0x888888;this.w=10;this.h=22;this.dmg=15+d*4;break;case’demon’:this.hp=this.maxHp=60+d*18;this.color=0xaa2288;this.w=12;this.h=20;this.dmg=18+d*5;this.flying=true;break;default:this.hp=this.maxHp=20;this.color=0x888888;this.w=8;this.h=16;this.dmg=6;}
+switch(type){
+case’zombie’:this.hp=this.maxHp=40+d*12;this.color=0x336622;this.w=8;this.h=22;this.dmg=10+d*2;this.speed=1.2;break;
+case’creeper’:this.hp=this.maxHp=25+d*8;this.color=0x44aa22;this.w=8;this.h=22;this.dmg=0;this.speed=1.4;break;
+case’spider’:this.hp=this.maxHp=20+d*6;this.color=0x222222;this.w=12;this.h=10;this.dmg=8+d*2;this.speed=2.5;this.canClimb=true;break;
+default:this.hp=this.maxHp=20;this.color=0x888888;this.w=8;this.h=16;this.dmg=6;this.speed=1;
+}
 this.draw();
 }
-solid(tx,ty){if(tx<0||tx>=WW||ty<0||ty>=WH)return true;const t=this.sc.map[tx][ty];return t!==0&&t!==9&&t!==5&&t!==11;}
+
+solid(tx,ty){
+if(tx<0||tx>=WW||ty<0||ty>=WH)return true;
+const t=this.sc.map[tx][ty];
+return t!==0&&t!==9&&t!==5&&t!==11;
+}
+
+// Line-of-sight check — returns true if can see player (no solid blocks between)
+hasLOS(px,py){
+const x0=this.cont.x,y0=this.cont.y;
+const dx=px-x0,dy=py-y0;
+const steps=Math.max(Math.abs(dx),Math.abs(dy))/TS;
+if(steps<1)return true;
+for(let i=1;i<steps;i++){
+const tx=Math.floor((x0+dx*(i/steps))/TS);
+const ty=Math.floor((y0+dy*(i/steps))/TS);
+if(this.solid(tx,ty))return false;
+}
+return true;
+}
+
 draw(){
 const g=this.gfx;g.clear();if(!this.alive)return;
-if(this.type===‘goblin’){const ls=this.state===‘chase’?Math.sin(Date.now()*.018)*14:0;g.fillStyle(0x000000,.15);g.fillEllipse(0,11,12,4);g.fillStyle(0x114411);g.fillRect(-5,8,4,6+ls*.3);g.fillRect(1,8,4,6-ls*.3);g.fillStyle(this.color);g.fillRect(-4,-8,8,14);g.fillStyle(0x33aa33);g.fillRect(-4,-8,8,3);g.fillStyle(0x003300);g.fillRect(-5,-8,4,8);g.fillRect(1,-8,4,8);g.fillStyle(0xddff88);g.fillRect(-3,-12,6,6);g.fillStyle(0x113311);g.fillRect(-3,-12,6,2);g.fillStyle(0xffdd00);g.fillRect(0,1,5,2);g.scaleX=this.facing;}
-else if(this.type===‘slime’){const bob=Math.sin(Date.now()*.006)*(this.state===‘chase’?3:1.5);g.fillStyle(0x001a44,.2);g.fillEllipse(0,8,14,4);g.fillStyle(0x2244aa);g.fillEllipse(0,bob,14,10);g.fillStyle(0x3366ff,.8);g.fillEllipse(0,bob-2,11,7);g.fillStyle(0x66aaff,.4);g.fillEllipse(-1,bob-3,5,3);g.fillStyle(0xffff88);g.fillCircle(-2,bob-1,2);g.fillCircle(2,bob-1,2);g.fillStyle(0x000000);g.fillCircle(-2,bob-1,1);g.fillCircle(2,bob-1,1);}
-else if(this.type===‘zombie’){const ls=this.state===‘chase’?Math.sin(Date.now()*.012)*10:0;g.fillStyle(0x000000,.2);g.fillEllipse(0,12,14,4);g.fillStyle(0x223310);g.fillRect(-4,8,4,8+ls*.3);g.fillRect(1,8,4,8-ls*.3);g.fillStyle(0x334422);g.fillRect(-5,-4,10,13);g.fillStyle(0x446633);g.fillRect(-6,-5,4,10);g.fillRect(2,-5,4,10);g.fillStyle(0x88aa66);g.fillRect(-4,-16,8,13);g.fillStyle(0xcc2200,.8);g.fillCircle(-1,-11,2);g.fillCircle(2,-11,2);g.scaleX=this.facing;}
-else if(this.type===‘eye’||this.type===‘demon’){const fl=Math.sin(Date.now()*.004)*4;const ec=this.type===‘demon’?0xaa2288:0xaa1111;g.fillStyle(0x000000,.2);g.fillEllipse(0,10,16,4);g.fillStyle(ec);g.fillEllipse(0,fl,16,14);g.fillStyle(this.type===‘demon’?0xdd44aa:0xdd2222);g.fillEllipse(0,fl-1,12,10);g.fillStyle(0xffffff);g.fillEllipse(0,fl-1,8,7);g.fillStyle(0x000000);g.fillEllipse(0,fl,5,5);}
-else if(this.type===‘knight’){const ls=this.state===‘chase’?Math.sin(Date.now()*.014)*12:0;g.fillStyle(0x000000,.2);g.fillEllipse(0,13,14,4);g.fillStyle(0x666666);g.fillRect(-4,8,4,8);g.fillRect(1,8,4,8);g.fillStyle(0x888888);g.fillRect(-5,-4,10,13);g.fillStyle(0xaaaaaa);g.fillRect(-4,-16,8,13);g.fillStyle(0xffcc00);g.fillRect(-4,-16,8,3);g.scaleX=this.facing;}
-const hg=this.hpGfx;hg.clear();if(this.hp<this.maxHp){const fy=-this.h-8;hg.fillStyle(0x660000);hg.fillRect(-12,fy,24,4);hg.fillStyle(0x44ff44);hg.fillRect(-12,fy,24*(this.hp/this.maxHp),4);}
+const t=Date.now();
+if(this.type===‘zombie’){
+const ls=this.state===‘chase’?Math.sin(t*.012)*10:0;
+g.fillStyle(0x000000,.2);g.fillEllipse(0,12,14,4);
+// Legs
+g.fillStyle(0x223310);g.fillRect(-4,8,4,8+ls*.3);g.fillRect(1,8,4,8-ls*.3);
+// Body
+g.fillStyle(0x334422);g.fillRect(-5,-4,10,13);
+// Arms stretched out (zombie style)
+g.fillStyle(0x446633);
+g.fillRect(this.facing>0?5:-9,-2,4,8);
+g.fillRect(this.facing>0?-9:5,2,4,6);
+// Head
+g.fillStyle(0x88aa66);g.fillRect(-4,-16,8,13);
+g.fillStyle(0x223311);g.fillRect(-4,-16,8,4);
+// Glowing red eyes
+g.fillStyle(0xff0000,.9);g.fillCircle(-1,-11,2.5);g.fillCircle(2,-11,2.5);
+g.fillStyle(0xff8888,.5);g.fillCircle(-1,-11,1);g.fillCircle(2,-11,1);
+g.scaleX=this.facing;
 }
+else if(this.type===‘creeper’){
+const flash=this.fuseActive?Math.sin(t*.02)>.0:false;
+const col=flash?0xffffff:0x44aa22;
+g.fillStyle(0x000000,.2);g.fillEllipse(0,12,14,4);
+// Legs (4 legs like creeper)
+g.fillStyle(0x2a6a1a);
+g.fillRect(-5,8,4,8);g.fillRect(1,8,4,8);
+// Body
+g.fillStyle(col);g.fillRect(-5,-4,10,13);
+// Neck
+g.fillStyle(col);g.fillRect(-3,-8,6,5);
+// Head (square)
+g.fillStyle(col);g.fillRect(-6,-18,12,11);
+// Face - creeper face
+g.fillStyle(0x000000);
+g.fillRect(-4,-16,3,3);g.fillRect(1,-16,3,3); // eyes
+g.fillRect(-3,-13,1,3);g.fillRect(-1,-13,2,4);g.fillRect(2,-13,1,3); // mouth
+if(this.fuseActive){
+// Fuse timer visual
+const pct=this.fuseTimer/2000;
+const fc=pct<0.5?0xffff00:0xff4400;
+this.timerGfx.clear();
+this.timerGfx.fillStyle(0x000000,.6);this.timerGfx.fillRect(-14,-42,28,8);
+this.timerGfx.fillStyle(fc);this.timerGfx.fillRect(-13,-41,Math.round(26*pct),6);
+this.timerTxt.setText(‘💥 ‘+(((2000-this.fuseTimer)/1000).toFixed(1)));
+} else {
+this.timerGfx.clear();this.timerTxt.setText(’’);
+}
+}
+else if(this.type===‘spider’){
+const ls=this.state===‘chase’?Math.sin(t*.025)*8:0;
+g.fillStyle(0x000000,.2);g.fillEllipse(0,6,16,4);
+// 8 legs
+g.fillStyle(0x111111);
+for(let i=0;i<4;i++){const a=-40+i*28+ls*(i%2===0?1:-1);g.fillRect(-12+i*2,-2,12,2);g.fillRect(2,-2,12,2);}
+g.fillStyle(this.color);g.fillEllipse(-3,0,10,8);
+g.fillStyle(0x333333);g.fillEllipse(3,-1,8,7);
+// Red eyes
+g.fillStyle(0xff0000);
+g.fillCircle(1,-3,1.5);g.fillCircle(4,-3,1.5);g.fillCircle(-1,-2,1);g.fillCircle(6,-2,1);
+}
+const hg=this.hpGfx;hg.clear();
+if(this.hp<this.maxHp){
+const fy=-this.h-10;
+hg.fillStyle(0x660000);hg.fillRect(-12,fy,24,4);
+hg.fillStyle(0x44ff44);hg.fillRect(-12,fy,24*(this.hp/this.maxHp),4);
+}
+}
+
 update(dt,px,py){
-if(!this.alive)return;if(this.dmgCD>0)this.dmgCD-=dt;if(this.invCD>0)this.invCD-=dt;this.stateT+=dt;
-const dx=px-this.cont.x,dy=py-this.cont.y,dist=Math.sqrt(dx*dx+dy*dy);
-if(dist<120)this.state=‘chase’;else if(dist>250)this.state=‘patrol’;
-const spd=this.state===‘chase’?({goblin:2.2,slime:1,zombie:1.4,eye:1.6,knight:1.8,demon:2}[this.type]||1.5):.6;
-if(this.flying){if(this.state===‘chase’){const ang=Math.atan2(dy,dx);this.cont.x+=Math.cos(ang)*spd;this.cont.y+=Math.sin(ang)*spd;}else{this.cont.x+=this.facing*spd*.4;if(this.stateT>1500){this.facing*=-1;this.stateT=0;}}this.draw();return;}
-if(this.state===‘chase’){this.facing=dx>0?1:-1;this.vx=this.facing*spd;}else{if(this.stateT>1800){this.facing*=-1;this.stateT=0;}this.vx=this.facing*spd*.5;}
-this.vy=Math.min(this.vy+.35,16);
-const nnx=this.cont.x+this.vx,bx=Math.floor(nnx/TS),by=Math.floor((this.cont.y-this.h*.5)/TS),by2=Math.floor(this.cont.y/TS);
-if(!this.solid(bx,by)&&!this.solid(bx,by2))this.cont.x=Phaser.Math.Clamp(nnx,0,WW*TS);else{this.vx=0;this.facing*=-1;}
-if(this.onG&&this.solid(Math.floor((this.cont.x+this.facing*TS*1.2)/TS),Math.floor(this.cont.y/TS)))this.vy=-6.5;
-const nny=this.cont.y+this.vy;this.onG=false;if(!this.solid(Math.floor(this.cont.x/TS),Math.floor(nny/TS)))this.cont.y=nny;else{if(this.vy>0)this.onG=true;this.vy=0;}
-this.draw();
+if(!this.alive)return;
+if(this.dmgCD>0)this.dmgCD-=dt;
+if(this.invCD>0)this.invCD-=dt;
+this.stateT+=dt;
+const dx=px-this.cont.x,dy=py-this.cont.y;
+const dist=Math.sqrt(dx*dx+dy*dy);
+const inRange=dist<10*TS; // 10 blocks
+const los=inRange&&this.hasLOS(px,py);
+// State machine: only chase if player in range AND has line of sight
+if(los)this.state=‘chase’;
+else if(dist>12*TS)this.state=‘idle’;
+
+```
+// CREEPER logic
+if(this.type==='creeper'){
+  if(this.state==='chase'&&dist<3*TS&&los){
+    // Start fuse
+    if(!this.fuseActive){this.fuseActive=true;this.fuseTimer=0;showToast('🔥 Creeper fuse!',1500);}
+  } else {
+    // If player hides behind wall — pause fuse
+    if(this.fuseActive&&!los){this.fuseActive=false;this.fuseTimer=0;this.timerGfx.clear();this.timerTxt.setText('');}
+  }
+  if(this.fuseActive){
+    this.fuseTimer+=dt;
+    if(this.fuseTimer>=2000)this.explode();
+  }
 }
+
+const spd=this.state==='chase'?this.speed:.4;
+
+// Spider can climb walls
+if(this.type==='spider'&&this.state==='chase'){
+  const ang=Math.atan2(dy,dx);
+  this.cont.x+=Math.cos(ang)*spd;
+  this.cont.y+=Math.sin(ang)*spd;
+  this.cont.x=Phaser.Math.Clamp(this.cont.x,0,WW*TS);
+  this.cont.y=Phaser.Math.Clamp(this.cont.y,0,WH*TS);
+  this.facing=dx>0?1:-1;
+  this.draw();return;
+}
+
+// Ground movement
+if(this.state==='chase'){this.facing=dx>0?1:-1;this.vx=this.facing*spd;}
+else{
+  if(this.stateT>2000){this.facing*=-1;this.stateT=0;}
+  this.vx=this.facing*spd*.5;
+}
+// Creeper stops when fuse active
+if(this.type==='creeper'&&this.fuseActive)this.vx=0;
+
+this.vy=Math.min(this.vy+.35,16);
+const nnx=this.cont.x+this.vx;
+const bx=Math.floor(nnx/TS),by=Math.floor((this.cont.y-this.h*.5)/TS),by2=Math.floor(this.cont.y/TS);
+if(!this.solid(bx,by)&&!this.solid(bx,by2))
+  this.cont.x=Phaser.Math.Clamp(nnx,0,WW*TS);
+else{this.vx=0;this.facing*=-1;}
+// Jump over obstacles
+if(this.onG&&this.solid(Math.floor((this.cont.x+this.facing*TS*1.2)/TS),Math.floor(this.cont.y/TS)))
+  this.vy=-6.5;
+const nny=this.cont.y+this.vy;this.onG=false;
+if(!this.solid(Math.floor(this.cont.x/TS),Math.floor(nny/TS)))
+  this.cont.y=nny;
+else{if(this.vy>0)this.onG=true;this.vy=0;}
+this.draw();
+```
+
+}
+
+explode(){
+if(this.exploded)return;
+this.exploded=true;this.alive=false;
+const sc=this.sc;
+// Big explosion FX
+for(let i=0;i<20;i++){sc.breakFX(this.cont.x+(Math.random()-.5)*40,this.cont.y+(Math.random()-.5)*40,{a:0xff8800,b:0xff4400});}
+// Destroy nearby blocks (radius 3)
+const cx=Math.floor(this.cont.x/TS),cy=Math.floor(this.cont.y/TS);
+for(let dx=-3;dx<=3;dx++)for(let dy=-3;dy<=3;dy++){
+if(dx*dx+dy*dy>10)continue;
+const nx=cx+dx,ny=cy+dy;
+if(nx>0&&nx<WW&&ny>0&&ny<WH&&sc.map[nx][ny]!==0&&sc.map[nx][ny]!==10){
+sc.map[nx][ny]=0;sc.invChunk(nx,ny);
+}
+}
+// Damage player if close
+const pdx=sc.pC.x-this.cont.x,pdy=sc.pC.y-this.cont.y;
+const pdist=Math.sqrt(pdx*pdx+pdy*pdy);
+if(pdist<3*TS){
+const dmg=Math.round(60*(1-pdist/(3*TS)));
+sc.pHP=Math.max(1,sc.pHP-dmg);sc.pInv=500;
+showToast(`💥 Creeper exploded! -${dmg}HP`,3000);
+}
+sc.time.delayedCall(100,()=>{this.gfx.clear();this.timerGfx.clear();this.timerTxt.setText(’’);this.dead=true;});
+}
+
 takeDamage(dmg,vx,vy){
-if(!this.alive||this.invCD>0)return;this.hp-=dmg;this.invCD=200;
-if(this.hp<=0){this.alive=false;this.sc.time.delayedCall(350,()=>{this.gfx.clear();this.dead=true;});this.sc.time.delayedCall(30,()=>this.sc.breakFX(this.cont.x,this.cont.y,{a:this.color,b:0xcc2222}));const loot={goblin:[‘coal’,‘iron’,‘meat’],slime:[‘dirt’,‘stone’],zombie:[‘plank’,‘iron’,‘meat’],eye:[‘iron’,‘coal’],knight:[‘iron’,‘ironbar’],demon:[‘coal’,‘iron’]}[this.type]||[‘dirt’];this.sc.spawnDrop(this.cont.x,this.cont.y,loot[Math.floor(Math.random()*loot.length)]);if(Math.random()<.2)this.sc.spawnDrop(this.cont.x,this.cont.y,‘bandage’);}else{this.vx=vx||0;this.vy=vy||-3;}
+if(!this.alive||this.invCD>0)return;
+this.hp-=dmg;this.invCD=200;
+if(this.hp<=0){
+this.alive=false;
+this.sc.time.delayedCall(350,()=>{this.gfx.clear();this.dead=true;});
+this.sc.breakFX(this.cont.x,this.cont.y,{a:this.color,b:0xcc2222});
+const loot={zombie:[‘plank’,‘iron’,‘meat’],creeper:[‘coal’,‘gunpowder’],spider:[‘coal’,‘iron’]}[this.type]||[‘dirt’];
+this.sc.spawnDrop(this.cont.x,this.cont.y,loot[Math.floor(Math.random()*loot.length)]);
+if(Math.random()<.2)this.sc.spawnDrop(this.cont.x,this.cont.y,‘bandage’);
+}else{this.vx=vx||0;this.vy=vy||-3;}
 }
 }
 
@@ -702,7 +931,7 @@ if(this.hp<=0){this.alive=false;this.sc.time.delayedCall(300,()=>{this.gfx.clear
 }
 }
 
-new Phaser.Game({type:Phaser.AUTO,width:IS_MOBILE?Math.min(window.innerWidth,window.innerHeight):800,height:IS_MOBILE?Math.max(window.innerWidth,window.innerHeight):500,backgroundColor:’#000008’,parent:document.body,scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH},physics:{default:‘arcade’},scene:[MenuScene,GameScene]});
+new Phaser.Game({type:Phaser.AUTO,width:window.innerWidth,height:window.innerHeight,backgroundColor:’#000008’,parent:document.body,scale:{mode:Phaser.Scale.RESIZE,autoCenter:Phaser.Scale.CENTER_BOTH},physics:{default:‘arcade’},scene:[MenuScene,GameScene]});
 </script>
 
 </body>
