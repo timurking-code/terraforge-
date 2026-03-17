@@ -225,34 +225,101 @@ const Online={
   init(){
     if(this.peer)return;
     try{
-      this.peer=new Peer(undefined,{debug:0});
+      // Use more reliable PeerJS config
+      this.peer=new Peer(undefined,{
+        host:'0.peerjs.com',
+        port:443,
+        path:'/',
+        secure:true,
+        debug:0,
+        config:{iceServers:[
+          {urls:'stun:stun.l.google.com:19302'},
+          {urls:'stun:stun1.l.google.com:19302'}
+        ]}
+      });
       this.peer.on('open',id=>{
         this.myId=id;
         const el=document.getElementById('myId');
-        el.textContent='Your ID: '+id+' (tap to copy)';
-        el.onclick=()=>{navigator.clipboard?.writeText(id).then(()=>toast('Copied!'));};
+        el.textContent='✅ Your ID: '+id+'\n(tap to copy!)';
+        el.style.cursor='pointer';
+        el.onclick=()=>{
+          navigator.clipboard?.writeText(id).then(()=>toast('✅ ID copied! Send to friend',3000));
+        };
+        toast('🌐 Online ready! Share your ID',3000);
       });
-      this.peer.on('connection',c=>{this.conn=c;this.setup(c);toast('👥 Friend joined!');});
-      this.peer.on('error',e=>toast('Error: '+e.type));
-    }catch(e){}
+      this.peer.on('connection',c=>{this.conn=c;this.setup(c);toast('👥 Friend joined!',3000);});
+      this.peer.on('error',e=>{
+        toast('❌ Error: '+e.type+' — try again',3000);
+        console.log('PeerJS error:',e);
+        // Reset and retry
+        this.peer=null;
+      });
+      this.peer.on('disconnected',()=>{
+        toast('⚠️ Disconnected, reconnecting...',2000);
+        this.peer?.reconnect();
+      });
+    }catch(e){toast('PeerJS failed: '+e.message,3000);}
   },
   connect(){
-    const id=document.getElementById('peerIn').value.trim();if(!id)return;
-    if(!this.peer){this.init();setTimeout(()=>this._do(id),1500);}else this._do(id);
+    const id=document.getElementById('peerIn').value.trim();
+    if(!id){toast('❌ Enter friend ID first!');return;}
+    if(!this.peer||this.peer.destroyed){
+      this.peer=null;
+      this.init();
+      toast('Starting connection...',1500);
+      setTimeout(()=>this._do(id),2000);
+    } else if(!this.peer.id){
+      toast('Still connecting to server...',1500);
+      setTimeout(()=>this._do(id),2000);
+    } else {
+      this._do(id);
+    }
   },
-  _do(id){this.conn=this.peer.connect(id,{reliable:true});this.setup(this.conn);toast('Connecting...');},
+  _do(id){
+    toast('🔗 Connecting to '+id.slice(0,8)+'...',3000);
+    try{
+      this.conn=this.peer.connect(id,{reliable:true,serialization:'json'});
+      this.setup(this.conn);
+    }catch(e){toast('❌ Failed: '+e.message,3000);}
+  },
   setup(c){
-    c.on('open',()=>{toast('✅ Connected!');UI.closeOnline();});
+    c.on('open',()=>{
+      toast('✅ Connected!',3000);UI.closeOnline();
+      // If host — send world to joining player
+      if(G&&this.peer&&c.peer!==this.myId){
+        setTimeout(()=>{
+          try{
+            c.send({t:'world',map:Save.enc(G.map),surf:G.surf,day:G.dayNum,dayT:G.dayT});
+            toast('🌍 Sending world...',2000);
+          }catch(e){}
+        },500);
+      }
+    });
     c.on('data',d=>{
       if(!G)return;
+      // Receive world from host
+      if(d.t==='world'){
+        G.map=Save.dec(d.map);
+        G.surf=d.surf;
+        G.dayNum=d.day;
+        G.dayT=d.dayT;
+        // Rebuild all chunks
+        Object.values(G.chunks).forEach(ch=>ch.destroy());
+        G.chunks={};
+        G.refreshChunks();
+        toast('🌍 World synced!',3000);
+      }
       if(d.t==='pos'){
         if(!this.others[d.id]){const g=G.add.graphics().setDepth(11);this.others[d.id]={g};}
         const o=this.others[d.id];o.g.clear();o.g.setPosition(d.x,d.y);
-        o.g.fillStyle(0xff8888);o.g.fillRect(-6,-4,12,12);o.g.fillStyle(0xffcc88);o.g.fillRect(-5,-16,10,11);o.g.scaleX=d.f||1;
+        o.g.fillStyle(0xff8888);o.g.fillRect(-6,-4,12,12);
+        o.g.fillStyle(0xffcc88);o.g.fillRect(-5,-16,10,11);
+        o.g.fillStyle(0xff4444);o.g.fillRect(-5,-16,10,4);
+        o.g.scaleX=d.f||1;
       }
-      if(d.t==='blk'&&G){G.map[d.x][d.y]=d.b;G.dirtyChunk(d.x,d.y);}
+      if(d.t==='blk'){G.map[d.x][d.y]=d.b;G.dirtyChunk(d.x,d.y);}
     });
-    c.on('close',()=>{toast('Friend left');Object.values(this.others).forEach(o=>o.g.destroy());this.others={};this.conn=null;});
+    c.on('close',()=>{toast('Friend left',3000);Object.values(this.others).forEach(o=>o.g.destroy());this.others={};this.conn=null;});
   },
   pos(){if(!this.conn||!this.conn.open||!G)return;try{this.conn.send({t:'pos',id:this.myId,x:Math.round(G.pC.x),y:Math.round(G.pC.y),f:G.pFacing});}catch(e){}},
   blk(x,y,b){if(!this.conn||!this.conn.open)return;try{this.conn.send({t:'blk',x,y,b});}catch(e){}},
